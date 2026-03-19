@@ -58,8 +58,10 @@ export default function Step1({ data, update, onNext }: Props) {
     if (!MAPBOX_TOKEN) return;
     setSearching(true);
     try {
+      // proximity=77.2,28.6 biases results toward India (Delhi coords)
+      // worldview=in shows India-centric place names
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json`
-        + `?access_token=${MAPBOX_TOKEN}&types=place&limit=5&language=en`;
+        + `?access_token=${MAPBOX_TOKEN}&types=place&limit=8&language=en&proximity=77.2,20.5&worldview=in`;
       const res  = await fetch(url);
       const json = await res.json();
       const results: CityResult[] = (json.features || []).map((f: any) => ({

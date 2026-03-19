@@ -18,34 +18,35 @@ type Props = {
 const MAP_TYPES = [
   {
     id: "zenith",
-    label: "Zenith Map",
-    description: "Only stars visible from your location that night. A personal, intimate sky.",
+    label: "Your Sky",
+    description: "Stars, planets, Sun and Moon positioned exactly as they were from your location at that moment.",
     badge: null,
     hint: null,
   },
   {
     id: "fullsky",
-    label: "Full Sky Map",
-    description: "The entire celestial sphere — every star, every constellation.",
+    label: "All Stars",
+    description: "The full celestial sphere — every star and constellation, day or night, exactly as they were.",
     badge: null,
     hint: null,
   },
   {
     id: "both",
-    label: "Both Maps",
-    description: "Get both styles. Decide which one to print later — or keep both forever.",
+    label: "Both Posters",
+    description: "Get both styles now. Decide which one to print, frame, or gift after you see them.",
     badge: "Decide later",
     hint: "Not sure which style you'll prefer? Get both and choose after you see them.",
   },
 ];
 
+// Themes match src/config.py THEMES exactly — same names, same order
 const THEMES = [
-  { id: "Dark Navy",   bg: "#1B2D4F", stars: "#FFFFFF", lines: "#8AAFD4" },
-  { id: "Midnight",    bg: "#080E1A", stars: "#FFFFFF", lines: "#6B8FAF" },
-  { id: "Light",       bg: "#F5F0E8", stars: "#1B2D4F", lines: "#4A6FA5" },
-  { id: "Vintage",     bg: "#2A1F0E", stars: "#F0E4C8", lines: "#B8923A" },
-  { id: "Deep Purple", bg: "#1A0E2C", stars: "#EDE8F5", lines: "#9C7BC8" },
-  { id: "Forest",      bg: "#0D1F14", stars: "#E8F5E9", lines: "#4CAF50" },
+  { id: "Dark Navy",      bg: "#0B1426", stars: "#FFFFFF",  lines: "#C8C3C0" },
+  { id: "Midnight Black", bg: "#000000", stars: "#FFFFFF",  lines: "#CC8866" },
+  { id: "Sepia",          bg: "#2C1810", stars: "#FFE4C4",  lines: "#D4956A" },
+  { id: "Vintage",        bg: "#1A1A2E", stars: "#FFD700",  lines: "#B8860B" },
+  { id: "Light",          bg: "#F5F0E8", stars: "#2C2C2C",  lines: "#8B6914" },
+  { id: "Burgundy",       bg: "#1A0008", stars: "#FFE8EE",  lines: "#C2185B" },
 ];
 
 const TITLE_FONTS = [
@@ -395,6 +396,16 @@ function CustomizationPanel({
         <Toggle label="Constellation lines" value={(data as any)[showConstKey] ?? true} onChange={v => update({ [showConstKey]: v } as any)} />
         <Toggle label="Constellation labels" value={(data as any)[showConstLabelsKey] ?? true} onChange={v => update({ [showConstLabelsKey]: v } as any)} />
 
+        <div>
+          <label style={{ ...labelStyle, marginBottom: "8px" }}>Location format</label>
+          <select style={selectStyle} value={(data as any)[locationFmtKey] || "City, State, Country"}
+            onChange={e => update({ [locationFmtKey]: e.target.value } as any)}
+            onFocus={e => (e.target.style.borderColor = "rgba(200,169,110,0.6)")}
+            onBlur={e  => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}>
+            {LOCATION_FORMATS.map(f => <option key={f} value={f} style={{ background: "#1B2D4F" }}>{f}</option>)}
+          </select>
+        </div>
+
       </ExpandSection>
 
       {/* Tier 3 */}
@@ -438,41 +449,250 @@ function CustomizationPanel({
           </>
         )}
 
-        <div style={{ height: "1px", background: "rgba(255,255,255,0.06)" }} />
-
-        <div>
-          <label style={{ ...labelStyle, marginBottom: "8px" }}>Location format</label>
-          <select style={selectStyle} value={(data as any)[locationFmtKey] || "City, State, Country"}
-            onChange={e => update({ [locationFmtKey]: e.target.value } as any)}
-            onFocus={e => (e.target.style.borderColor = "rgba(200,169,110,0.6)")}
-            onBlur={e  => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}>
-            {LOCATION_FORMATS.map(f => <option key={f} value={f} style={{ background: "#1B2D4F" }}>{f}</option>)}
-          </select>
-        </div>
-
       </ExpandSection>
     </div>
   );
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function Step2({ data, update, onBack, onNext }: Props) {
   const [mapTab, setMapTab] = useState<"zenith" | "fullsky">("zenith");
-  const [generated, setGenerated] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated]               = useState(false);
+  const [generating, setGenerating]             = useState(false);
+  const [previewImages, setPreviewImages]       = useState<Record<string, string>>({});
+  const [generatedTitles, setGeneratedTitles]   = useState<Record<string, string>>({});
+  const [generatedWishing, setGeneratedWishing] = useState<Record<string, string>>({});
+  const [regenLoading, setRegenLoading]         = useState<Record<string, boolean>>({});
+  const [error, setError]                       = useState("");
   const titles = HANDPICKED[data.occasion] || HANDPICKED["Custom"];
 
   const canProceed =
     data.mapType !== null && data.theme !== "" &&
-    (data.titleOption !== "custom" || data.customTitle.trim() !== "") &&
-    (data.titleOption !== "handpicked" || data.customTitle.trim() !== "");
+    (data.titleOption === "AI" ||
+     data.titleOption !== "custom" || data.customTitle.trim() !== "") &&
+    (data.titleOption === "AI" ||
+     data.titleOption !== "handpicked" || data.customTitle.trim() !== "");
 
   const handleGenerate = async () => {
     setGenerating(true);
-    // TODO: call poster_service API here
-    // For now simulate a 1.5s generation delay
-    await new Promise(r => setTimeout(r, 1500));
-    setGenerated(true);
-    setGenerating(false);
+    setError("");
+    try {
+      // Guard — coordinates required
+      if (!data.lat || !data.lon) {
+        setError("Please go back and select a city from the dropdown suggestions.");
+        setGenerating(false);
+        return;
+      }
+      if (!data.date) {
+        setError("Please go back and select a complete date.");
+        setGenerating(false);
+        return;
+      }
+
+      // data.mapType is "zenith" | "fullsky" | "both" — sent directly to backend
+      const mapType = data.mapType as "zenith" | "fullsky" | "both";
+
+      // Helper: for "both", each map has its own suffixed fields in MapFormData (e.g. theme_zenith).
+      // For single maps, fall back to the unsuffixed key.
+      const get = (key: string, mt: "zenith" | "fullsky") => {
+        const suffixed = (data as any)[`${key}_${mt}`];
+        return suffixed !== undefined ? suffixed : (data as any)[key];
+      };
+
+      // Build per-map fields for all maps being requested
+      const mapsToSend = mapType === "both" ? ["zenith", "fullsky"] : [mapType];
+      const perMapFields: Record<string, any> = {};
+      for (const mt of mapsToSend as ("zenith" | "fullsky")[]) {
+        const s = mt === "zenith" ? "z" : "f";
+        Object.assign(perMapFields, {
+          [`theme_${s}`]        : get("theme", mt)       || "Dark Navy",
+          [`title_option_${s}`] : get("titleOption", mt) || "AI",
+          [`custom_title_${s}`] : get("customTitle", mt) || "",
+          [`wishing_text_${s}`] : get("wishingText", mt) || "",
+          [`title_font_${s}`]     : get("titleFont", mt),
+          [`occasion_font_${s}`]  : get("occasionFont", mt),
+          [`title_color_${s}`]    : get("titleColor", mt),
+          [`occasion_color_${s}`] : get("occasionColor", mt),
+          [`bg_color_${s}`]       : get("bgColor", mt),
+          [`const_color_${s}`]    : get("constColor", mt),
+          [`star_density_${s}`]   : get("starDensity", mt) ?? 50,
+          [`show_constellations_${s}`]       : get("showConstellations", mt) ?? true,
+          [`show_constellation_labels_${s}`] : get("showConstellationLabels", mt) ?? true,
+          [`star_size_${s}`]          : get("starSize", mt)         ?? 50,
+          [`planet_size_${s}`]        : get("planetSize", mt)       ?? 50,
+          [`sun_size_${s}`]           : get("sunSize", mt)          ?? 50,
+          [`moon_size_${s}`]          : get("moonSize", mt)         ?? 50,
+          [`show_star_labels_${s}`]   : get("showStarLabels", mt)   ?? true,
+          [`show_planet_names_${s}`]  : get("showPlanetNames", mt)  ?? true,
+          [`show_sun_label_${s}`]     : get("showSunLabel", mt)     ?? true,
+          [`show_moon_label_${s}`]    : get("showMoonLabel", mt)    ?? true,
+          [`show_horizon_labels_${s}`]: get("showHorizonLabels", mt)?? true,
+          [`show_rising_labels_${s}`] : get("showRisingLabels", mt) ?? true,
+          [`location_format_${s}`]    : get("locationFormat", mt)   || "City, State, Country",
+        });
+      }
+
+      const resp = await fetch(`${API_URL}/api/v1/preview`, {
+        method : "POST",
+        headers: { "Content-Type": "application/json" },
+        body   : JSON.stringify({
+          lat     : data.lat,
+          lon     : data.lon,
+          date    : data.date,
+          time    : (() => {
+            const h = data.ampm === "PM" ? (data.hour % 12) + 12 : data.hour % 12;
+            return `${String(h).padStart(2,"0")}:${String(data.minute).padStart(2,"0")}`;
+          })(),
+          city    : data.city,
+          occasion: data.occasion === "Custom" ? data.customOccasion : data.occasion,
+          name    : data.name,
+          map_type: mapType,
+          ...perMapFields,
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || "Preview generation failed.");
+      }
+
+      const result = await resp.json();
+
+      // Consume all returned maps — backend returns only what was requested
+      const newImages: Record<string, string>  = {};
+      const newTitles: Record<string, string>  = {};
+      const newWishing: Record<string, string> = {};
+      const formUpdates: Record<string, any>   = {};
+
+      for (const mt of mapsToSend as ("zenith" | "fullsky")[]) {
+        const s = mt === "zenith" ? "z" : "f";
+        const img     = result[`${mt}_preview_b64`];
+        const title   = result[`title_${s}`];
+        const wishing = result[`wishing_${s}`];
+
+        if (img)     newImages[mt]  = img;
+        if (title) {
+          newTitles[mt] = title;
+          if (mapType === "both") {
+            formUpdates[`customTitle_${mt}`] = title;
+            formUpdates[`titleOption_${mt}`] = "custom";
+          } else {
+            formUpdates.customTitle = title;
+            formUpdates.titleOption = "custom";
+          }
+        }
+        if (wishing) {
+          newWishing[mt] = wishing;
+          if (mapType === "both") {
+            formUpdates[`wishingText_${mt}`] = wishing;
+          } else {
+            formUpdates.wishingText = wishing;
+          }
+        }
+      }
+
+      setPreviewImages(prev  => ({ ...prev,  ...newImages  }));
+      setGeneratedTitles(prev => ({ ...prev, ...newTitles  }));
+      setGeneratedWishing(prev => ({ ...prev,...newWishing }));
+      if (Object.keys(formUpdates).length) update(formUpdates as any);
+      setGenerated(true);
+
+    } catch (e: any) {
+      setError(e.message || "Preview failed. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // Regenerate preview for a specific map — full re-render with new AI title
+  const handleRegenPreview = async (mapType: "zenith" | "fullsky") => {
+    setRegenLoading(prev => ({ ...prev, [mapType]: true }));
+    setError("");
+    try {
+      const mt = mapType;
+      const s  = mt === "zenith" ? "z" : "f";
+      const get = (key: string) => {
+        const suffixed = (data as any)[`${key}_${mt}`];
+        return suffixed !== undefined ? suffixed : (data as any)[key];
+      };
+
+      // Force AI title regeneration by clearing custom title for this map
+      if (data.mapType === "both") {
+        update({ [`titleOption_${mt}`]: "AI", [`customTitle_${mt}`]: "" } as any);
+      } else {
+        update({ titleOption: "AI", customTitle: "" });
+      }
+
+      const resp = await fetch(`${API_URL}/api/v1/preview`, {
+        method : "POST",
+        headers: { "Content-Type": "application/json" },
+        body   : JSON.stringify({
+          lat     : data.lat,
+          lon     : data.lon,
+          date    : data.date,
+          time    : (() => {
+            const h = data.ampm === "PM" ? (data.hour % 12) + 12 : data.hour % 12;
+            return `${String(h).padStart(2,"0")}:${String(data.minute).padStart(2,"0")}`;
+          })(),
+          city    : data.city,
+          occasion: data.occasion === "Custom" ? data.customOccasion : data.occasion,
+          name    : data.name,
+          map_type: mt,
+          [`theme_${s}`]               : get("theme")       || "Dark Navy",
+          [`title_option_${s}`]        : "AI",
+          [`custom_title_${s}`]        : "",
+          [`wishing_text_${s}`]        : "",
+          [`title_font_${s}`]          : get("titleFont"),
+          [`occasion_font_${s}`]       : get("occasionFont"),
+          [`title_color_${s}`]         : get("titleColor"),
+          [`occasion_color_${s}`]      : get("occasionColor"),
+          [`bg_color_${s}`]            : get("bgColor"),
+          [`const_color_${s}`]         : get("constColor"),
+          [`star_density_${s}`]        : get("starDensity")        ?? 50,
+          [`show_constellations_${s}`]       : get("showConstellations")      ?? true,
+          [`show_constellation_labels_${s}`] : get("showConstellationLabels") ?? true,
+          [`star_size_${s}`]           : get("starSize")           ?? 50,
+          [`planet_size_${s}`]         : get("planetSize")         ?? 50,
+          [`sun_size_${s}`]            : get("sunSize")            ?? 50,
+          [`moon_size_${s}`]           : get("moonSize")           ?? 50,
+          [`show_star_labels_${s}`]    : get("showStarLabels")     ?? true,
+          [`show_planet_names_${s}`]   : get("showPlanetNames")    ?? true,
+          [`show_sun_label_${s}`]      : get("showSunLabel")       ?? true,
+          [`show_moon_label_${s}`]     : get("showMoonLabel")      ?? true,
+          [`show_horizon_labels_${s}`] : get("showHorizonLabels")  ?? true,
+          [`show_rising_labels_${s}`]  : get("showRisingLabels")   ?? true,
+          [`location_format_${s}`]     : get("locationFormat")     || "City, State, Country",
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || "Preview generation failed.");
+      }
+
+      const result = await resp.json();
+      const img    = result[`${mt}_preview_b64`];
+      const title  = result[`title_${s}`];
+      const wishing = result[`wishing_${s}`];
+
+      if (img)    setPreviewImages(prev  => ({ ...prev,  [mt]: img }));
+      if (title)  setGeneratedTitles(prev => ({ ...prev, [mt]: title }));
+      if (wishing) setGeneratedWishing(prev => ({ ...prev, [mt]: wishing }));
+
+      // Store new title in form state for full-res
+      if (data.mapType === "both") {
+        update({ [`customTitle_${mt}`]: title, [`titleOption_${mt}`]: "custom",
+                 [`wishingText_${mt}`]: wishing } as any);
+      } else {
+        update({ customTitle: title, titleOption: "custom", wishingText: wishing });
+      }
+
+    } catch (e: any) {
+      setError(e.message || "Could not regenerate preview.");
+    } finally {
+      setRegenLoading(prev => ({ ...prev, [mapType]: false }));
+    }
   };
 
   return (
@@ -609,6 +829,15 @@ export default function Step2({ data, update, onBack, onNext }: Props) {
           </div>
         )}
 
+{/* Error */}
+        {error && (
+          <p style={{
+            fontSize: "13px", color: "#F87171",
+            padding: "10px 14px", background: "rgba(248,113,113,0.08)",
+            borderRadius: "8px", border: "1px solid rgba(248,113,113,0.2)", margin: 0,
+          }}>{error}</p>
+        )}
+
         {/* ── Generate button ──────────────────────────── */}
         <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
           <button onClick={onBack}
@@ -640,7 +869,7 @@ export default function Step2({ data, update, onBack, onNext }: Props) {
               transition: "all 0.3s",
             }}
           >
-            {generating ? "Generating your map..." : generated ? "↺ Regenerate" : "✦ Generate my map"}
+            {generating ? "Generating..." : generated ? "↺ Regenerate" : "✦ Generate my map"}
           </motion.button>
         </div>
 
@@ -669,7 +898,13 @@ export default function Step2({ data, update, onBack, onNext }: Props) {
                   border: "1px solid rgba(255,255,255,0.08)", background: "#0C1624",
                   aspectRatio: "3/4",
                 }}>
-                  <img src="/poster-sample.png" alt="preview"
+                  <img
+                    src={
+                      data.mapType === "fullsky"
+                        ? (previewImages["fullsky"] ? `data:image/png;base64,${previewImages["fullsky"]}` : "/poster-sample.png")
+                        : (previewImages["zenith"]  ? `data:image/png;base64,${previewImages["zenith"]}`  : "/poster-sample.png")
+                    }
+                    alt="preview"
                     style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                   <div style={{
                     position: "absolute", inset: 0, display: "flex",
@@ -698,8 +933,9 @@ export default function Step2({ data, update, onBack, onNext }: Props) {
                     border: "1px solid rgba(255,255,255,0.08)", background: "#0C1624",
                     aspectRatio: "3/4",
                   }}>
-                    <img src="/poster-sample.png" alt="All Stars"
-                      style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    <img
+                      src={previewImages["fullsky"] ? `data:image/png;base64,${previewImages["fullsky"]}` : "/poster-sample.png"}
+                      alt="All Stars" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                     <div style={{
                       position: "absolute", inset: 0, display: "flex",
                       alignItems: "center", justifyContent: "center", pointerEvents: "none",
@@ -737,6 +973,55 @@ export default function Step2({ data, update, onBack, onNext }: Props) {
               }}>
                 Watermark removed after purchase · Full resolution PNG + PDF
               </p>
+
+              {/* Generated titles — shown per map */}
+              {(data.mapType === "both" ? ["zenith", "fullsky"] : [data.mapType || "zenith"]).map(mt => {
+                const title   = generatedTitles[mt];
+                const wishing = generatedWishing[mt];
+                const label   = mt === "zenith" ? "Your Sky" : "All Stars";
+                const loading = regenLoading[mt];
+                if (!title && !wishing) return null;
+                return (
+                  <div key={mt} style={{
+                    padding: "16px 18px", borderRadius: "12px",
+                    background: "rgba(200,169,110,0.05)",
+                    border: "1px solid rgba(200,169,110,0.15)",
+                  }}>
+                    {data.mapType === "both" && (
+                      <p style={{ fontSize: "11px", fontWeight: 700, color: "rgba(138,175,212,0.5)",
+                        letterSpacing: "1.5px", textTransform: "uppercase", margin: "0 0 10px" }}>
+                        {label}
+                      </p>
+                    )}
+                    {title && (
+                      <p style={{
+                        fontFamily: "var(--font-playfair), Georgia, serif",
+                        fontSize: "16px", color: "#C8A96E", margin: "0 0 6px", lineHeight: 1.4,
+                      }}>
+                        {title}
+                      </p>
+                    )}
+                    {wishing && (
+                      <p style={{ fontSize: "14px", color: "rgba(138,175,212,0.6)", margin: "0 0 12px", fontStyle: "italic" }}>
+                        {wishing}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => handleRegenPreview(mt as "zenith" | "fullsky")}
+                      disabled={loading}
+                      style={{
+                        background: "none", border: "1px solid rgba(200,169,110,0.25)",
+                        borderRadius: "8px", padding: "6px 14px",
+                        color: loading ? "rgba(200,169,110,0.3)" : "rgba(200,169,110,0.7)",
+                        fontSize: "12px", cursor: loading ? "not-allowed" : "pointer",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {loading ? "Regenerating..." : "↺ Regenerate preview"}
+                    </button>
+                  </div>
+                );
+              })}
 
               {/* Proceed to payment */}
               <motion.button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Step1 from "./Step1";
 import Step2 from "./Step2";
 import Step3 from "./Step3";
@@ -53,6 +53,14 @@ export default function CustomizeFlow() {
 
   const update = (fields: Partial<MapFormData>) =>
     setData(d => ({ ...d, ...fields }));
+
+  // If returning from Razorpay redirect, jump straight to Step 3
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("rzp_order_id") || params.get("rzp_payment_id")) {
+      setStep(2);
+    }
+  }, []);
 
   return (
     <div style={{
