@@ -697,14 +697,6 @@ export default function Step2({ data, update, onBack, onNext }: Props) {
   };
 
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "1fr",
-      gap: "32px",
-    }}
-    className="step2-layout">
-
-    {/* ── Form panel ────────────────────────────────── */}
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
 
       <div style={{ marginBottom: "36px" }}>
@@ -1046,7 +1038,5 @@ export default function Step2({ data, update, onBack, onNext }: Props) {
 
       </div>
     </motion.div>
-
-    </div>
   );
 }

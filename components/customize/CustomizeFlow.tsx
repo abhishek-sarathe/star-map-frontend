@@ -72,8 +72,8 @@ export default function CustomizeFlow() {
       padding: "80px 24px 48px",
     }}>
 
-      {/* Progress bar */}
-      <div style={{ width: "100%", maxWidth: "560px", marginBottom: "48px" }}>
+      {/* Progress bar — matches content width */}
+      <div style={{ width: "100%", maxWidth: step === 1 ? "900px" : "560px", marginBottom: "48px", transition: "max-width 0.4s ease" }}>
         {/* Step labels */}
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "12px" }}>
           {STEPS.map((label, i) => (
