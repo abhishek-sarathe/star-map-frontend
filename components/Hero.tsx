@@ -15,11 +15,12 @@ const STARS = Array.from({ length: 120 }, (_, i) => ({
 }));
 
 const OCCASIONS = [
-  "she said yes",
-  "a new star arrived",
   "Our story began",
+  "A new star arrived",
   "We first met",
-  "your team lifted the trophy",
+  "you achieved your dream",
+  "She said yes",
+  "you made it happen",
   "family became complete",
   "history was made",
 ];
