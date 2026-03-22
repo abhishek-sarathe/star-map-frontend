@@ -47,20 +47,49 @@ const INITIAL: MapFormData = {
 
 const STEPS = ["Your moment", "Your style", "Preview & pay"];
 
+const STORAGE_KEY = "uts_customize_data";
+const STEP_KEY    = "uts_customize_step";
+
 export default function CustomizeFlow() {
   const [step, setStep] = useState(0);
   const [data, setData] = useState<MapFormData>(INITIAL);
 
-  const update = (fields: Partial<MapFormData>) =>
-    setData(d => ({ ...d, ...fields }));
-
-  // If returning from Razorpay redirect, jump straight to Step 3
+  // ── Restore saved state on mount ───────────────────────────
   useEffect(() => {
+    try {
+      const savedData = sessionStorage.getItem(STORAGE_KEY);
+      const savedStep = sessionStorage.getItem(STEP_KEY);
+      if (savedData) {
+        const parsed = JSON.parse(savedData);
+        setData((d: MapFormData) => ({ ...d, ...parsed }));
+      }
+      if (savedStep) {
+        setStep(Number(savedStep));
+      }
+    } catch {}
+
+    // Razorpay redirect overrides saved step
     const params = new URLSearchParams(window.location.search);
     if (params.get("rzp_order_id") || params.get("rzp_payment_id")) {
       setStep(2);
     }
   }, []);
+
+  // ── Persist on every change ────────────────────────────────
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {}
+  }, [data]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STEP_KEY, String(step));
+    } catch {}
+  }, [step]);
+
+  const update = (fields: Partial<MapFormData>) =>
+    setData((d: MapFormData) => ({ ...d, ...fields }));
 
   return (
     <div style={{
